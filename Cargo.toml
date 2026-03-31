@@ -1,0 +1,56 @@
+[package]
+name = "snakemake-lang"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Parser, AST, and compiler for the Snakemake workflow language"
+license = "MIT"
+repository = "https://github.com/snakemake/snakemake-lang"
+keywords = ["snakemake", "parser", "ast", "bioinformatics", "workflow"]
+categories = ["parser-implementations", "compilers", "science"]
+
+[lib]
+name = "snakemake_lang"
+crate-type = ["lib"]
+
+[[bin]]
+name = "snakemake-lang"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[dependencies]
+# Ruff crates for Python parsing (pinned to a stable release tag)
+ruff_python_parser = { git = "https://github.com/astral-sh/ruff.git", tag = "0.14.0" }
+ruff_python_ast = { git = "https://github.com/astral-sh/ruff.git", tag = "0.14.0" }
+ruff_source_file = { git = "https://github.com/astral-sh/ruff.git", tag = "0.14.0" }
+ruff_text_size = { git = "https://github.com/astral-sh/ruff.git", tag = "0.14.0" }
+
+# Error handling
+thiserror = "2"
+
+# Serialization (optional, for JSON AST output)
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+# CLI (optional)
+clap = { version = "4", features = ["derive"], optional = true }
+
+# Python bindings (optional)
+pyo3 = { version = "0.23", optional = true }
+
+[features]
+default = []
+cli = ["clap", "serde", "serde_json"]
+serde = ["dep:serde", "dep:serde_json"]
+python = ["pyo3"]
+extension-module = ["python", "pyo3/extension-module"]
+
+[dev-dependencies]
+insta = "1"                  # snapshot testing
+pretty_assertions = "1"
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
