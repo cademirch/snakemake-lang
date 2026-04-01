@@ -32,7 +32,7 @@ fn parse_python_only() {
     let ast = parse("x = 1\ny = 2\n", "Snakefile").unwrap();
     assert_eq!(ast.body.len(), 2);
     for stmt in &ast.body {
-        assert!(matches!(stmt, snakemake_lang::ast::Statement::Python(_)));
+        assert!(matches!(stmt, snakemake_lang::ast::Statement::Python(..)));
     }
 }
 

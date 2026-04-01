@@ -137,7 +137,7 @@ fn parse_multi_rule_with_python() {
     for stmt in &ast.body {
         match stmt {
             Statement::Rule(_) => rule_count += 1,
-            Statement::Python(_) => python_count += 1,
+            Statement::Python(..) => python_count += 1,
             _ => {}
         }
     }

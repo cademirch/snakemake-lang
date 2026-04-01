@@ -354,7 +354,7 @@ impl<'src> Parser<'src> {
         module
             .body
             .into_iter()
-            .map(|stmt| Statement::Python(offset_stmt(stmt, offset)))
+            .map(|stmt| Statement::Python(offset_stmt(stmt, offset), offset))
             .collect()
     }
 }

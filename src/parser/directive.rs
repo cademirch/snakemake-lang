@@ -128,6 +128,7 @@ impl<'src> Parser<'src> {
     ) -> DirectiveValue {
         let mut block_lines: Vec<&str> = Vec::new();
         let mut block_start: Option<usize> = None;
+        let mut block_end: usize = directive_start;
 
         while !self.at_end() {
             let line = match self.current() {
@@ -143,6 +144,7 @@ impl<'src> Parser<'src> {
                         block_start = Some(line.start);
                     }
                     block_lines.push(line.text);
+                    block_end = line.start + line.text.len();
                     self.advance();
                     continue;
                 } else {
@@ -171,6 +173,7 @@ impl<'src> Parser<'src> {
                 block_start = Some(line.start);
             }
             block_lines.push(line.text);
+            block_end = line.start + line.text.len();
             self.advance();
         }
 
@@ -187,9 +190,15 @@ impl<'src> Parser<'src> {
             });
         }
 
-        // Dedent the block
+        // Dedent the block for ruff parsing, but use original source positions
+        // for the range so the compiler can extract the correct text.
         let dedented = dedent_block(&block_lines.join("\n"), parent_indent);
-        let args = self.parse_arguments(&dedented, block_start);
+        let mut args = self.parse_arguments(&dedented, block_start);
+        // Override the range to cover the actual source span, not the dedented length.
+        args.range = TextRange::new(
+            TextSize::new(block_start as u32),
+            TextSize::new(block_end as u32),
+        );
         DirectiveValue::Arguments(args)
     }
 
