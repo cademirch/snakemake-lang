@@ -258,6 +258,8 @@ impl<'src> Parser<'src> {
         let start_cursor = self.cursor;
         let mut end_byte = 0usize;
         let mut start_byte: Option<usize> = None;
+        // Track whether we broke because of an indented rule/checkpoint.
+        let mut broke_at_indented_rule = false;
 
         while !self.at_end() {
             let line = match self.current() {
@@ -280,6 +282,7 @@ impl<'src> Parser<'src> {
 
             // rule/checkpoint break at any indent.
             if word == "rule" || word == "checkpoint" {
+                broke_at_indented_rule = indent > 0;
                 break;
             }
 
@@ -303,6 +306,20 @@ impl<'src> Parser<'src> {
         // Clamp end_byte to source length in case the last line has no trailing '\n'.
         let end_byte = end_byte.min(self.source.len());
         let python_text = &self.source[start_byte..end_byte];
+
+        if python_text.trim().is_empty() {
+            return Vec::new();
+        }
+
+        // When a rule/checkpoint at indent > 0 caused the break, the last
+        // non-blank line is a compound statement header (e.g. `if True:`) whose
+        // body is the rule. Strip those dangling suite-opener lines so ruff
+        // doesn't see an unterminated compound statement.
+        let python_text = if broke_at_indented_rule {
+            strip_trailing_suite_openers(python_text)
+        } else {
+            python_text
+        };
 
         if python_text.trim().is_empty() {
             return Vec::new();
@@ -371,6 +388,52 @@ impl<'src> Parser<'src> {
 // ============================================================
 // Helpers
 // ============================================================
+
+/// Strips trailing compound-statement suite-opener lines from `text`.
+///
+/// When a `rule`/`checkpoint` at indent > 0 is the "body" of a Python
+/// control-flow construct (`if`, `for`, `while`, `else`, `elif`, `with`,
+/// `try`, `except`, `finally`), the collected Python text ends with a
+/// dangling header like `if True:` that has no body. Passing such text to
+/// ruff produces a spurious syntax error. This function removes those
+/// trailing openers so ruff only sees syntactically complete Python.
+fn strip_trailing_suite_openers(text: &str) -> &str {
+    let mut end = text.len();
+    loop {
+        // Find the last non-empty line within `text[..end]`.
+        let slice = &text[..end];
+        let last_line = slice
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty());
+        match last_line {
+            Some(line) if is_suite_opener(line.trim()) => {
+                // Remove this line from the end.
+                let line_start = slice.rfind(line).unwrap_or(0);
+                end = line_start;
+                if end == 0 {
+                    return "";
+                }
+            }
+            _ => break,
+        }
+    }
+    &text[..end]
+}
+
+/// Returns true if `trimmed` is a Python compound-statement header (ends with
+/// `:` and starts with a control-flow keyword).
+fn is_suite_opener(trimmed: &str) -> bool {
+    if !trimmed.ends_with(':') {
+        return false;
+    }
+    let kw = trimmed.split_ascii_whitespace().next().unwrap_or("");
+    matches!(
+        kw,
+        "if" | "elif" | "else" | "for" | "while" | "with" | "try"
+            | "except" | "finally" | "async" | "class" | "def"
+    )
+}
 
 /// Returns true if `word` is a Snakemake keyword that is only recognized at
 /// column 0 (i.e., not `rule`/`checkpoint`, which are handled separately).
