@@ -119,7 +119,7 @@ pub(crate) fn scan_lines(source: &str) -> Vec<Line<'_>> {
     }
 
     // Remove the trailing empty line produced by a final '\n'.
-    if lines.last().map_or(false, |l| l.text.is_empty()) {
+    if lines.last().is_some_and(|l| l.text.is_empty()) {
         lines.pop();
     }
 
@@ -133,6 +133,7 @@ pub(crate) fn scan_lines(source: &str) -> Vec<Line<'_>> {
 /// Top-level parser for a Snakemake file.
 pub(crate) struct Parser<'src> {
     pub(crate) source: &'src str,
+    #[allow(dead_code)]
     pub(crate) path: &'src str,
     pub(crate) lines: Vec<Line<'src>>,
     pub(crate) cursor: usize,
@@ -376,10 +377,7 @@ fn strip_trailing_suite_openers(text: &str) -> &str {
     loop {
         // Find the last non-empty line within `text[..end]`.
         let slice = &text[..end];
-        let last_line = slice
-            .lines()
-            .rev()
-            .find(|l| !l.trim().is_empty());
+        let last_line = slice.lines().rev().find(|l| !l.trim().is_empty());
         match last_line {
             Some(line) if is_suite_opener(line.trim()) => {
                 // Remove this line from the end.
@@ -404,9 +402,44 @@ fn is_suite_opener(trimmed: &str) -> bool {
     let kw = trimmed.split_ascii_whitespace().next().unwrap_or("");
     matches!(
         kw,
-        "if" | "elif" | "else" | "for" | "while" | "with" | "try"
-            | "except" | "finally" | "async" | "class" | "def"
+        "if" | "elif"
+            | "else"
+            | "for"
+            | "while"
+            | "with"
+            | "try"
+            | "except"
+            | "finally"
+            | "async"
+            | "class"
+            | "def"
     )
+}
+
+/// Strip a trailing `# comment` from a line fragment, respecting string literals.
+pub(crate) fn strip_inline_comment(text: &str) -> &str {
+    let mut in_string: Option<char> = None;
+    let mut prev_backslash = false;
+    for (i, c) in text.char_indices() {
+        if let Some(quote) = in_string {
+            if c == '\\' && !prev_backslash {
+                prev_backslash = true;
+                continue;
+            }
+            if c == quote && !prev_backslash {
+                in_string = None;
+            }
+            prev_backslash = false;
+            continue;
+        }
+        prev_backslash = false;
+        match c {
+            '#' => return text[..i].trim_end(),
+            '\'' | '"' => in_string = Some(c),
+            _ => {}
+        }
+    }
+    text
 }
 
 /// Returns true if `word` is a Snakemake keyword that is only recognized at
@@ -482,8 +515,8 @@ mod tests {
         let source = "abc\ndef\nghi\n";
         let lines = scan_lines(source);
         assert_eq!(lines[0].start, 0);
-        assert_eq!(lines[1].start, 4);  // "abc\n" = 4 bytes
-        assert_eq!(lines[2].start, 8);  // "def\n"  = 4 bytes
+        assert_eq!(lines[1].start, 4); // "abc\n" = 4 bytes
+        assert_eq!(lines[2].start, 8); // "def\n"  = 4 bytes
     }
 
     #[test]

@@ -6,6 +6,9 @@ use ruff_text_size::TextRange;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
+#[cfg(feature = "serde")]
+use crate::serde_helpers::{serialize_identifier, serialize_identifier_vec, serialize_text_range};
+
 use super::rule::DirectiveValue;
 
 /// A global directive like `configfile:`, `include:`, etc.
@@ -14,6 +17,7 @@ use super::rule::DirectiveValue;
 pub struct SnakemakeGlobalDirective {
     pub keyword: GlobalKeyword,
     pub value: DirectiveValue,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -39,6 +43,7 @@ pub enum GlobalKeyword {
 }
 
 impl GlobalKeyword {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "configfile" => Some(Self::Configfile),

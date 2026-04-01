@@ -23,7 +23,13 @@ impl<'src> Parser<'src> {
         let keyword = if is_checkpoint { "checkpoint" } else { "rule" };
         let after_keyword = trimmed[keyword.len()..].trim();
 
-        let name_str = after_keyword.strip_suffix(':').unwrap_or(after_keyword).trim();
+        // Strip trailing comments before extracting the name.
+        let after_keyword = super::strip_inline_comment(after_keyword);
+
+        let name_str = after_keyword
+            .strip_suffix(':')
+            .unwrap_or(after_keyword)
+            .trim();
 
         if name_str.is_empty() {
             self.errors.push(ParseError {
@@ -113,8 +119,11 @@ impl<'src> Parser<'src> {
             last.range.end().to_u32() as usize
         } else {
             // Just the header line
-            rule_start + self.lines.get(self.cursor.saturating_sub(1))
-                .map_or(0, |l| l.start + l.text.len() - rule_start)
+            rule_start
+                + self
+                    .lines
+                    .get(self.cursor.saturating_sub(1))
+                    .map_or(0, |l| l.start + l.text.len() - rule_start)
         };
 
         let range = TextRange::new(

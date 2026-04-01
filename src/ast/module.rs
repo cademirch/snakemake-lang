@@ -6,7 +6,7 @@ use ruff_text_size::TextRange;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
-use super::rule::{DirectiveArguments, DirectiveValue};
+use super::rule::DirectiveValue;
 
 /// A `module` definition.
 #[derive(Debug, Clone)]
@@ -40,6 +40,7 @@ pub enum ModuleKeyword {
 }
 
 impl ModuleKeyword {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "snakefile" => Some(Self::Snakefile),

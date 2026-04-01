@@ -21,10 +21,7 @@ impl<'src> Parser<'src> {
     ///
     /// Returns `None` if the current line doesn't start with a recognized
     /// directive keyword.
-    pub(crate) fn try_parse_directive(
-        &mut self,
-        body_indent: usize,
-    ) -> Option<SnakemakeDirective> {
+    pub(crate) fn try_parse_directive(&mut self, body_indent: usize) -> Option<SnakemakeDirective> {
         let line = self.current()?;
         let trimmed = line.trimmed();
 
@@ -67,12 +64,15 @@ impl<'src> Parser<'src> {
             let original_line_text = &self.source[directive_start..];
             let colon_offset_in_source = original_line_text.find(':').unwrap_or(0);
             let after_colon_in_source = &original_line_text[colon_offset_in_source + 1..];
-            let leading_ws = after_colon_in_source.len()
-                - after_colon_in_source.trim_start().len();
+            let leading_ws = after_colon_in_source.len() - after_colon_in_source.trim_start().len();
             let value_offset = directive_start + colon_offset_in_source + 1 + leading_ws;
 
             // Inline form: value is on the same line (possibly with continuation)
             let value_text = self.collect_inline_value(&after_colon_owned);
+
+            // Strip a trailing comment from single-line values (multi-line values
+            // with open delimiters don't reach here with a comment appended).
+            let value_text = super::strip_inline_comment(&value_text).to_string();
 
             let args = self.parse_arguments(&value_text, value_offset);
             let args_end = if args.range == TextRange::default() {
@@ -391,11 +391,10 @@ impl<'src> Parser<'src> {
 /// and comments.
 fn count_open_delimiters(text: &str) -> i32 {
     let mut depth: i32 = 0;
-    let mut chars = text.chars().peekable();
     let mut in_string: Option<char> = None;
     let mut prev_backslash = false;
 
-    while let Some(c) = chars.next() {
+    for c in text.chars() {
         if let Some(quote) = in_string {
             if c == '\\' && !prev_backslash {
                 prev_backslash = true;

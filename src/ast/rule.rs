@@ -6,6 +6,12 @@ use ruff_text_size::TextRange;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
+#[cfg(feature = "serde")]
+use crate::serde_helpers::{
+    serialize_expr, serialize_expr_vec, serialize_identifier, serialize_stmt_vec,
+    serialize_text_range,
+};
+
 // ============================================================
 // Rule / Checkpoint
 // ============================================================
@@ -23,6 +29,7 @@ use serde::Serialize;
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SnakemakeRule {
     /// Rule name. Required in the formalized grammar.
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier"))]
     pub name: Identifier,
 
     /// Directives in the rule body, in source order.
@@ -35,6 +42,7 @@ pub struct SnakemakeRule {
     pub is_checkpoint: bool,
 
     /// Source range of the entire rule definition.
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -57,6 +65,7 @@ pub struct SnakemakeDirective {
     pub value: DirectiveValue,
 
     /// Source range of the entire directive (keyword through end of value).
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -77,6 +86,7 @@ pub enum DirectiveValue {
     ///     with open(input[0]) as f:
     ///         data = f.read()
     /// ```
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_stmt_vec"))]
     Block(Vec<Stmt>),
 }
 
@@ -88,12 +98,14 @@ pub enum DirectiveValue {
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct DirectiveArguments {
     /// Positional arguments.
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_expr_vec"))]
     pub positional: Vec<Expr>,
 
     /// Keyword arguments (name=value).
     pub keywords: Vec<DirectiveKeywordArgument>,
 
     /// Source range of the entire argument list.
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -101,8 +113,11 @@ pub struct DirectiveArguments {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct DirectiveKeywordArgument {
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier"))]
     pub name: Identifier,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_expr"))]
     pub value: Expr,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -162,6 +177,7 @@ pub enum DirectiveKeyword {
 impl DirectiveKeyword {
     /// Parse a keyword string into a `DirectiveKeyword`.
     /// Returns `None` if the string is not a recognized keyword.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "input" => Some(Self::Input),

@@ -1,5 +1,5 @@
-use snakemake_lang::{parse, ast::*};
 use snakemake_lang::errors::ParseErrorKind;
+use snakemake_lang::{ast::*, parse};
 
 #[test]
 fn parse_simple_rule() {
@@ -38,7 +38,8 @@ fn parse_rule_with_shell() {
 
 #[test]
 fn parse_checkpoint() {
-    let source = "checkpoint process:\n    input: \"data.csv\"\n    output: directory(\"results/\")\n";
+    let source =
+        "checkpoint process:\n    input: \"data.csv\"\n    output: directory(\"results/\")\n";
     let ast = parse(source, "test.smk").unwrap();
     let rule = match &ast.body[0] {
         Statement::Rule(r) => r,
@@ -118,7 +119,11 @@ fn parse_multiline_parenthesized() {
     assert_eq!(rule.directives.len(), 2);
     match &rule.directives[0].value {
         DirectiveValue::Arguments(args) => {
-            assert_eq!(args.positional.len(), 1, "expand() call should be one positional arg");
+            assert_eq!(
+                args.positional.len(),
+                1,
+                "expand() call should be one positional arg"
+            );
         }
         other => panic!("expected Arguments, got {:?}", other),
     }
@@ -142,16 +147,28 @@ fn parse_multi_rule_with_python() {
         }
     }
     assert_eq!(rule_count, 2, "should find 2 rules");
-    assert!(python_count >= 2, "should find at least 2 Python statements");
+    assert!(
+        python_count >= 2,
+        "should find at least 2 Python statements"
+    );
 }
 
 #[test]
 fn parse_rules_in_sequence() {
-    let source = "rule a:\n    input: \"x\"\n\nrule b:\n    input: \"y\"\n\nrule c:\n    input: \"z\"\n";
+    let source =
+        "rule a:\n    input: \"x\"\n\nrule b:\n    input: \"y\"\n\nrule c:\n    input: \"z\"\n";
     let ast = parse(source, "test.smk").unwrap();
-    let rules: Vec<_> = ast.body.iter().filter_map(|s| {
-        if let Statement::Rule(r) = s { Some(r) } else { None }
-    }).collect();
+    let rules: Vec<_> = ast
+        .body
+        .iter()
+        .filter_map(|s| {
+            if let Statement::Rule(r) = s {
+                Some(r)
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(rules.len(), 3);
     assert_eq!(rules[0].name.as_str(), "a");
     assert_eq!(rules[1].name.as_str(), "b");
@@ -166,9 +183,17 @@ fn parse_rules_in_sequence() {
 fn parse_rules_inside_if_block() {
     let source = "if True:\n    rule fastqc:\n        input: \"data/{sample}.fq\"\n        shell: \"fastqc {input}\"\n\nrule always:\n    input: \"x\"\n";
     let ast = parse(source, "test.smk").unwrap();
-    let rules: Vec<_> = ast.body.iter().filter_map(|s| {
-        if let Statement::Rule(r) = s { Some(r) } else { None }
-    }).collect();
+    let rules: Vec<_> = ast
+        .body
+        .iter()
+        .filter_map(|s| {
+            if let Statement::Rule(r) = s {
+                Some(r)
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(rules.len(), 2, "should find both rules (flat AST)");
     assert_eq!(rules[0].name.as_str(), "fastqc");
     assert_eq!(rules[1].name.as_str(), "always");
@@ -178,8 +203,15 @@ fn parse_rules_inside_if_block() {
 fn parse_control_flow_fixture() {
     let source = std::fs::read_to_string("tests/fixtures/control_flow.smk").unwrap();
     let ast = parse(&source, "control_flow.smk").unwrap();
-    let rule_count = ast.body.iter().filter(|s| matches!(s, Statement::Rule(_))).count();
-    assert!(rule_count >= 2, "should find rules inside control flow, got {rule_count}");
+    let rule_count = ast
+        .body
+        .iter()
+        .filter(|s| matches!(s, Statement::Rule(_)))
+        .count();
+    assert!(
+        rule_count >= 2,
+        "should find rules inside control flow, got {rule_count}"
+    );
 }
 
 // ============================================================
@@ -199,8 +231,12 @@ fn parse_unknown_directive_recovers() {
             assert!(rule.directives.len() >= 2);
         }
         Err(errors) => {
-            assert!(errors.iter().any(|e| e.message.contains("bogus") || e.message.contains("unexpected")),
-                "error should mention the unknown directive");
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| e.message.contains("bogus") || e.message.contains("unexpected")),
+                "error should mention the unknown directive"
+            );
         }
     }
 }
@@ -211,8 +247,11 @@ fn parse_missing_rule_name_reports_error() {
     let result = parse(source, "test.smk");
     match result {
         Err(errors) => {
-            assert!(errors.iter().any(|e| matches!(e.kind,
-                ParseErrorKind::MissingRuleName)));
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| matches!(e.kind, ParseErrorKind::MissingRuleName))
+            );
         }
         Ok(_) => {} // recovery is also fine
     }
@@ -245,5 +284,62 @@ fn parse_all_directives_fixture() {
         other => panic!("expected Rule, got {:?}", other),
     };
     assert_eq!(rule.name.as_str(), "full_example");
-    assert!(rule.directives.len() >= 15, "expected at least 15 directives, got {}", rule.directives.len());
+    assert!(
+        rule.directives.len() >= 15,
+        "expected at least 15 directives, got {}",
+        rule.directives.len()
+    );
+}
+
+// ============================================================
+// Task 22: Edge case tests
+// ============================================================
+
+#[test]
+fn parse_fstring_in_directive() {
+    let source = "rule foo:\n    input: f\"data/{config['sample']}.txt\"\n";
+    let ast = parse(source, "test.smk").unwrap();
+    assert_eq!(ast.body.len(), 1);
+}
+
+#[test]
+fn parse_triple_quoted_shell() {
+    let source = "rule foo:\n    shell:\n        \"\"\"\n        echo 'hello'\n        echo 'world'\n        \"\"\"\n";
+    let ast = parse(source, "test.smk").unwrap();
+    let rule = match &ast.body[0] {
+        Statement::Rule(r) => r,
+        other => panic!("expected Rule, got {:?}", other),
+    };
+    assert_eq!(rule.directives[0].keyword, DirectiveKeyword::Shell);
+}
+
+#[test]
+fn parse_windows_line_endings() {
+    let source = "rule foo:\r\n    input: \"a.txt\"\r\n    output: \"b.txt\"\r\n";
+    let ast = parse(source, "test.smk").unwrap();
+    assert_eq!(ast.body.len(), 1);
+}
+
+#[test]
+fn parse_trailing_comments() {
+    let source = "rule foo: # this is a rule\n    input: \"a.txt\" # input file\n";
+    let ast = parse(source, "test.smk").unwrap();
+    assert_eq!(ast.body.len(), 1);
+}
+
+#[test]
+fn parse_many_rules() {
+    let mut source = String::new();
+    for i in 0..100 {
+        source.push_str(&format!(
+            "rule rule_{i}:\n    input: \"in_{i}.txt\"\n    output: \"out_{i}.txt\"\n    shell: \"cp {{input}} {{output}}\"\n\n"
+        ));
+    }
+    let ast = parse(&source, "test.smk").unwrap();
+    let rule_count = ast
+        .body
+        .iter()
+        .filter(|s| matches!(s, Statement::Rule(_)))
+        .count();
+    assert_eq!(rule_count, 100);
 }
