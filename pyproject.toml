@@ -1,0 +1,38 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "snakemake-lang"
+version = "0.1.0"
+description = "Parser, AST, and compiler for the Snakemake workflow language"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["snakemake", "parser", "bioinformatics"]
+
+[tool.maturin]
+features = ["extension-module"]
+
+[tool.pixi.workspace]
+channels = ["conda-forge", "bioconda"]
+platforms = ["osx-arm64", "osx-64", "linux-64"]
+
+[tool.pixi.dependencies]
+python = ">=3.10"
+maturin = ">=1.0"
+pip = "*"
+
+[tool.pixi.feature.test.dependencies]
+snakemake-minimal = ">=8.0"
+pytest = ">=7"
+
+[tool.pixi.environments]
+default = { features = [], solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
+
+[tool.pixi.tasks]
+build = "maturin develop --features extension-module"
+
+[tool.pixi.feature.test.tasks]
+test-py = { cmd = "pytest tests/python/ -v", depends-on = ["build"] }
+equivalence = { cmd = "python tests/compare_parsers.py tests/fixtures/*.smk", depends-on = ["build"] }
