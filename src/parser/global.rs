@@ -47,8 +47,7 @@ impl<'src> Parser<'src> {
             let original_line_text = &self.source[directive_start..];
             let colon_offset_in_source = original_line_text.find(':').unwrap_or(0);
             let after_colon_in_source = &original_line_text[colon_offset_in_source + 1..];
-            let leading_ws =
-                after_colon_in_source.len() - after_colon_in_source.trim_start().len();
+            let leading_ws = after_colon_in_source.len() - after_colon_in_source.trim_start().len();
             let value_offset = directive_start + colon_offset_in_source + 1 + leading_ws;
 
             let value_text = self.collect_inline_value(&after_colon_owned);
@@ -210,19 +209,14 @@ impl<'src> Parser<'src> {
                 TextSize::new(stmt_start as u32),
                 TextSize::new(value_end as u32),
             );
-            Statement::Storage(SnakemakeStorage {
-                tag,
-                value,
-                range,
-            })
+            Statement::Storage(SnakemakeStorage { tag, value, range })
         } else {
             // Inline form
             let after_colon_owned = after_colon.to_string();
             let original_line_text = &self.source[stmt_start..];
             let full_colon_offset = original_line_text.find(':').unwrap_or(0);
             let after_colon_in_source = &original_line_text[full_colon_offset + 1..];
-            let leading_ws =
-                after_colon_in_source.len() - after_colon_in_source.trim_start().len();
+            let leading_ws = after_colon_in_source.len() - after_colon_in_source.trim_start().len();
             let value_offset = stmt_start + full_colon_offset + 1 + leading_ws;
 
             let value_text = self.collect_inline_value(&after_colon_owned);

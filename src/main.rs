@@ -57,18 +57,12 @@ fn main() {
                     print!("{}", result.python);
                     if source_map {
                         let map = result.source_map.to_linemap(&result.python, &source);
-                        eprintln!(
-                            "{}",
-                            serde_json::to_string_pretty(&map).unwrap()
-                        );
+                        eprintln!("{}", serde_json::to_string_pretty(&map).unwrap());
                     }
                 }
                 Err(errors) => {
                     for err in &errors {
-                        eprintln!(
-                            "{}:{}:{}: {}",
-                            path, err.line, err.column, err.message
-                        );
+                        eprintln!("{}:{}:{}: {}", path, err.line, err.column, err.message);
                     }
                     std::process::exit(1);
                 }
@@ -83,17 +77,11 @@ fn main() {
 
             match snakemake_lang::parse(&source, &path) {
                 Ok(ast) => {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&ast).unwrap()
-                    );
+                    println!("{}", serde_json::to_string_pretty(&ast).unwrap());
                 }
                 Err(errors) => {
                     for err in &errors {
-                        eprintln!(
-                            "{}:{}:{}: {}",
-                            path, err.line, err.column, err.message
-                        );
+                        eprintln!("{}:{}:{}: {}", path, err.line, err.column, err.message);
                     }
                     std::process::exit(1);
                 }
@@ -120,10 +108,7 @@ fn main() {
                     Err(errors) => {
                         has_errors = true;
                         for err in &errors {
-                            eprintln!(
-                                "{}:{}:{}: {}",
-                                path, err.line, err.column, err.message
-                            );
+                            eprintln!("{}:{}:{}: {}", path, err.line, err.column, err.message);
                         }
                     }
                 }

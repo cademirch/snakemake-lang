@@ -116,10 +116,7 @@ impl<'src> Parser<'src> {
                             {
                                 let name = rest_tokens[i].trim_end_matches(',');
                                 if !name.is_empty() {
-                                    exclude.push(Identifier::new(
-                                        name,
-                                        TextRange::default(),
-                                    ));
+                                    exclude.push(Identifier::new(name, TextRange::default()));
                                 }
                                 i += 1;
                             }
@@ -197,11 +194,13 @@ impl<'src> Parser<'src> {
             if let Some(last) = wd.last() {
                 last.range.end().to_u32() as usize
             } else {
-                self.lines.get(self.cursor.saturating_sub(1))
+                self.lines
+                    .get(self.cursor.saturating_sub(1))
                     .map_or(stmt_start, |l| l.start + l.text.len())
             }
         } else {
-            self.lines.get(self.cursor.saturating_sub(1))
+            self.lines
+                .get(self.cursor.saturating_sub(1))
                 .map_or(stmt_start, |l| l.start + l.text.len())
         };
 
@@ -248,10 +247,7 @@ impl<'src> Parser<'src> {
             exclude: Vec::new(),
             name_modifier: None,
             with_directives: None,
-            range: TextRange::new(
-                TextSize::new(start as u32),
-                TextSize::new(start as u32),
-            ),
+            range: TextRange::new(TextSize::new(start as u32), TextSize::new(start as u32)),
         })
     }
 }

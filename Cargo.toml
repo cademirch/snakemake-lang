@@ -11,7 +11,7 @@ categories = ["parser-implementations", "compilers", "science"]
 
 [lib]
 name = "snakemake_lang"
-crate-type = ["lib"]
+crate-type = ["lib", "cdylib"]
 
 [[bin]]
 name = "snakemake-lang"

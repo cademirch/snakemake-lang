@@ -4,14 +4,20 @@ use snakemake_lang::parse;
 #[test]
 fn ruff_parses_simple_expression() {
     let parsed = parse_unchecked("42 + 1", Mode::Expression.into());
-    assert!(parsed.errors().is_empty(), "ruff should parse '42 + 1' without errors");
+    assert!(
+        parsed.errors().is_empty(),
+        "ruff should parse '42 + 1' without errors"
+    );
 }
 
 #[test]
 fn ruff_parses_function_call_with_kwargs() {
     let source = r#"f("a.txt", "b.txt", ref="genome.fa")"#;
     let parsed = parse_unchecked(source, Mode::Expression.into());
-    assert!(parsed.errors().is_empty(), "ruff should parse function call with kwargs");
+    assert!(
+        parsed.errors().is_empty(),
+        "ruff should parse function call with kwargs"
+    );
 }
 
 #[test]
@@ -40,5 +46,8 @@ fn parse_python_only() {
 fn parse_single_rule_detected() {
     let ast = parse("rule foo:\n    input: 'x.txt'\n", "Snakefile").unwrap();
     assert_eq!(ast.body.len(), 1);
-    assert!(matches!(&ast.body[0], snakemake_lang::ast::Statement::Rule(_)));
+    assert!(matches!(
+        &ast.body[0],
+        snakemake_lang::ast::Statement::Rule(_)
+    ));
 }

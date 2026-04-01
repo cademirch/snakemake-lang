@@ -3,9 +3,7 @@
 use ruff_python_ast::Identifier;
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::ast::{
-    DirectiveValue, ModuleDirective, ModuleKeyword, SnakemakeModule, Statement,
-};
+use crate::ast::{DirectiveValue, ModuleDirective, ModuleKeyword, SnakemakeModule, Statement};
 use crate::errors::{ParseError, ParseErrorKind};
 
 use super::Parser;
@@ -20,7 +18,10 @@ impl<'src> Parser<'src> {
 
         let trimmed = header_line.trimmed();
         let after_keyword = trimmed["module".len()..].trim();
-        let name_str = after_keyword.strip_suffix(':').unwrap_or(after_keyword).trim();
+        let name_str = after_keyword
+            .strip_suffix(':')
+            .unwrap_or(after_keyword)
+            .trim();
 
         if name_str.is_empty() {
             self.errors.push(ParseError {
@@ -96,8 +97,11 @@ impl<'src> Parser<'src> {
         let module_end = if let Some(last) = directives.last() {
             last.range.end().to_u32() as usize
         } else {
-            module_start + self.lines.get(self.cursor.saturating_sub(1))
-                .map_or(0, |l| l.start + l.text.len() - module_start)
+            module_start
+                + self
+                    .lines
+                    .get(self.cursor.saturating_sub(1))
+                    .map_or(0, |l| l.start + l.text.len() - module_start)
         };
 
         let range = TextRange::new(
@@ -114,10 +118,7 @@ impl<'src> Parser<'src> {
     }
 
     /// Try to parse a module directive from the current line.
-    fn try_parse_module_directive(
-        &mut self,
-        body_indent: usize,
-    ) -> Option<ModuleDirective> {
+    fn try_parse_module_directive(&mut self, body_indent: usize) -> Option<ModuleDirective> {
         let line = self.current()?;
         let trimmed = line.trimmed();
 
@@ -149,8 +150,7 @@ impl<'src> Parser<'src> {
             let original_line_text = &self.source[directive_start..];
             let colon_offset_in_source = original_line_text.find(':').unwrap_or(0);
             let after_colon_in_source = &original_line_text[colon_offset_in_source + 1..];
-            let leading_ws = after_colon_in_source.len()
-                - after_colon_in_source.trim_start().len();
+            let leading_ws = after_colon_in_source.len() - after_colon_in_source.trim_start().len();
             let value_offset = directive_start + colon_offset_in_source + 1 + leading_ws;
 
             let value_text = self.collect_inline_value(&after_colon_owned);

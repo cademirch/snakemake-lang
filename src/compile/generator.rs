@@ -35,6 +35,9 @@ pub struct VirtualPythonGenerator<'a> {
 
     /// Indentation prefix for rules inside control flow blocks.
     indent_prefix: String,
+
+    /// Whether the next emitted character should be preceded by indent_prefix.
+    at_line_start: bool,
 }
 
 impl<'a> VirtualPythonGenerator<'a> {
@@ -45,6 +48,7 @@ impl<'a> VirtualPythonGenerator<'a> {
             output: String::new(),
             source_map: SourceMap::new(),
             indent_prefix: String::new(),
+            at_line_start: false,
         }
     }
 
@@ -61,16 +65,19 @@ impl<'a> VirtualPythonGenerator<'a> {
     }
 
     /// Emit synthetic text with no original source mapping.
-    /// When `indent_prefix` is set, auto-prepends it after newlines.
+    /// When `indent_prefix` is set, auto-prepends it at each line start.
     pub fn emit(&mut self, text: &str) {
         if self.indent_prefix.is_empty() {
             self.output.push_str(text);
         } else {
-            // Insert indent_prefix after each newline (except trailing)
-            for (i, ch) in text.chars().enumerate() {
-                self.output.push(ch);
-                if ch == '\n' && i + 1 < text.len() {
+            for ch in text.chars() {
+                if self.at_line_start && ch != '\n' {
                     self.output.push_str(&self.indent_prefix);
+                    self.at_line_start = false;
+                }
+                self.output.push(ch);
+                if ch == '\n' {
+                    self.at_line_start = true;
                 }
             }
         }
@@ -86,12 +93,12 @@ impl<'a> VirtualPythonGenerator<'a> {
         self.source[..offset].matches('\n').count() + 1
     }
 
-    /// Determine the source indentation at a given byte offset.
+    /// Measure the leading whitespace of the line starting at `offset`.
     fn source_indent_at(&self, offset: usize) -> String {
-        let line_start = self.source[..offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let prefix = &self.source[line_start..offset];
-        let indent_len = prefix.len() - prefix.trim_start().len();
-        self.source[line_start..line_start + indent_len].to_string()
+        let rest = &self.source[offset..];
+        let trimmed = rest.trim_start_matches(|c: char| c == ' ' || c == '\t');
+        let indent_len = rest.len() - trimmed.len();
+        self.source[offset..offset + indent_len].to_string()
     }
 
     /// Extract original source text for a directive's argument range.
@@ -158,8 +165,8 @@ impl<'a> VirtualPythonGenerator<'a> {
             GlobalKeyword::Pepschema => "set_pepschema",
             GlobalKeyword::Report => "report",
             GlobalKeyword::Scattergather => "scattergather",
-            GlobalKeyword::WildcardConstraints => "register_wildcard_constraints",
-            GlobalKeyword::Container => "set_container_image",
+            GlobalKeyword::WildcardConstraints => "global_wildcard_constraints",
+            GlobalKeyword::Container => "global_container",
             GlobalKeyword::Containerized => "containerized",
             GlobalKeyword::Conda => "set_conda_prefix",
             GlobalKeyword::ResourceScopes => "register_resource_scopes",
@@ -225,6 +232,9 @@ impl<'a> VirtualPythonGenerator<'a> {
                 Statement::Python(py_stmt, chunk_offset) => {
                     self.emit_python_stmt(py_stmt, *chunk_offset)
                 }
+                Statement::VerbatimPython(text, offset) => {
+                    self.emit_mapped(text, *offset, text.len());
+                }
             }
         }
     }
@@ -238,9 +248,13 @@ impl<'a> VirtualPythonGenerator<'a> {
         let rule_offset = rule.range.start().to_u32() as usize;
         let lineno = self.line_at(rule_offset);
 
-        // Set indent prefix based on source position
+        // Set indent prefix based on source position (for rules inside if/for)
         let saved_indent = self.indent_prefix.clone();
+        let saved_at_line_start = self.at_line_start;
         self.indent_prefix = self.source_indent_at(rule_offset);
+        if !self.indent_prefix.is_empty() {
+            self.at_line_start = true;
+        }
 
         let checkpoint_arg = if rule.is_checkpoint {
             ", checkpoint=True"
@@ -317,6 +331,7 @@ impl<'a> VirtualPythonGenerator<'a> {
 
         // Restore indent prefix
         self.indent_prefix = saved_indent;
+        self.at_line_start = saved_at_line_start;
     }
 
     /// Emit a single directive as a `@workflow.method(value)` decorator.

@@ -319,44 +319,53 @@ impl<'src> Parser<'src> {
         }
 
         // When a rule/checkpoint at indent > 0 caused the break, the last
-        // non-blank line is a compound statement header (e.g. `if True:`) whose
-        // body is the rule. Strip those dangling suite-opener lines so ruff
-        // doesn't see an unterminated compound statement.
-        let python_text = if broke_at_indented_rule {
-            strip_trailing_suite_openers(python_text)
+        // non-blank line(s) may be compound statement headers (e.g. `if True:`)
+        // whose body is the rule. Strip them from ruff input (invalid Python
+        // in isolation) but preserve them as VerbatimPython statements.
+        let (python_text, verbatim_suffix) = if broke_at_indented_rule {
+            let stripped = strip_trailing_suite_openers(python_text);
+            let verbatim = &python_text[stripped.len()..];
+            (stripped, verbatim)
         } else {
-            python_text
+            (python_text, "")
         };
 
-        if python_text.trim().is_empty() {
-            return Vec::new();
+        let mut stmts = Vec::new();
+
+        if !python_text.trim().is_empty() {
+            let parsed = parse_unchecked(python_text, Mode::Module.into());
+            let offset = TextSize::new(start_byte as u32);
+
+            for err in parsed.errors() {
+                self.errors.push(ParseError {
+                    message: err.to_string(),
+                    range: offset_range(err.location, offset),
+                    kind: ParseErrorKind::PythonSyntaxError,
+                    line: self.lines.get(start_cursor).map_or(1, |l| l.number),
+                    column: 0,
+                    source_line: None,
+                });
+            }
+
+            if let Mod::Module(m) = parsed.into_syntax() {
+                stmts.extend(
+                    m.body
+                        .into_iter()
+                        .map(|stmt| Statement::Python(offset_stmt(stmt, offset), offset)),
+                );
+            }
         }
 
-        let parsed = parse_unchecked(python_text, Mode::Module.into());
-        let offset = TextSize::new(start_byte as u32);
-
-        // Collect any ruff syntax errors, offsetting their ranges.
-        for err in parsed.errors() {
-            self.errors.push(ParseError {
-                message: err.to_string(),
-                range: offset_range(err.location, offset),
-                kind: ParseErrorKind::PythonSyntaxError,
-                line: self.lines.get(start_cursor).map_or(1, |l| l.number),
-                column: 0,
-                source_line: None,
-            });
+        // Emit stripped suite openers as verbatim text
+        if !verbatim_suffix.trim().is_empty() {
+            let verbatim_offset = start_byte + python_text.len();
+            stmts.push(Statement::VerbatimPython(
+                verbatim_suffix.to_string(),
+                verbatim_offset,
+            ));
         }
 
-        let module = match parsed.into_syntax() {
-            Mod::Module(m) => m,
-            Mod::Expression(_) => return Vec::new(),
-        };
-
-        module
-            .body
-            .into_iter()
-            .map(|stmt| Statement::Python(offset_stmt(stmt, offset), offset))
-            .collect()
+        stmts
     }
 }
 

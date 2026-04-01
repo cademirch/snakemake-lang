@@ -9,8 +9,8 @@ pub mod source_map;
 
 pub use source_map::SourceMap;
 
-use crate::ast::Snakefile;
 use crate::CompileResult;
+use crate::ast::Snakefile;
 
 /// Generate virtual Python + source map from a Snakemake AST.
 pub fn generate(source: &str, path: &str, ast: &Snakefile) -> CompileResult {

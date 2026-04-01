@@ -72,4 +72,10 @@ pub enum Statement {
     /// The `TextSize` is the byte offset of the chunk this statement was parsed
     /// from, needed because ruff's TextRanges are relative to the chunk start.
     Python(Stmt, ruff_text_size::TextSize),
+
+    /// Verbatim Python text that is emitted as-is without ruff parsing.
+    /// Used for suite openers (`if True:`, `for x in y:`) whose body is
+    /// a Snakemake construct — these can't be parsed by ruff in isolation.
+    /// Fields: (text, byte_offset_in_source).
+    VerbatimPython(String, usize),
 }
