@@ -38,11 +38,7 @@ fn parse_python_only() {
 
 #[test]
 fn parse_single_rule_detected() {
-    // This test verifies that the dispatcher correctly identifies 'rule' and
-    // routes to parse_rule. parse_rule is not yet implemented, so this panics
-    // with todo!() — that is the expected outcome for this milestone.
-    let result = std::panic::catch_unwind(|| {
-        parse("rule foo:\n    input: 'x.txt'\n", "Snakefile")
-    });
-    assert!(result.is_err(), "parse_rule should panic with todo!() until implemented");
+    let ast = parse("rule foo:\n    input: 'x.txt'\n", "Snakefile").unwrap();
+    assert_eq!(ast.body.len(), 1);
+    assert!(matches!(&ast.body[0], snakemake_lang::ast::Statement::Rule(_)));
 }

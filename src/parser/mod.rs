@@ -339,10 +339,6 @@ impl<'src> Parser<'src> {
     // Stubs — implemented in later milestones
     // ----------------------------------------------------------
 
-    pub(crate) fn parse_rule(&mut self, _is_checkpoint: bool) -> Statement {
-        todo!("parse_rule: implement in Milestone 2")
-    }
-
     pub(crate) fn parse_module(&mut self) -> Statement {
         todo!("parse_module: implement in Milestone 3")
     }
