@@ -46,7 +46,9 @@
 pub mod directive;
 pub mod global;
 pub mod handler;
+pub mod module;
 pub mod snakemake;
+pub mod use_rule;
 
 use ruff_python_ast::Mod;
 use ruff_python_parser::{Mode, parse_unchecked};
@@ -186,7 +188,7 @@ impl<'src> Parser<'src> {
                 continue;
             }
 
-            let word = match line.first_word() {
+            let raw_word = match line.first_word() {
                 Some(w) => w,
                 None => {
                     self.advance();
@@ -194,6 +196,9 @@ impl<'src> Parser<'src> {
                 }
             };
             let indent = line.indent;
+
+            // Strip trailing colon so "ruleorder:" matches "ruleorder".
+            let word = raw_word.strip_suffix(':').unwrap_or(raw_word);
 
             // rule/checkpoint match at any indentation level.
             if word == "rule" || word == "checkpoint" {
@@ -277,7 +282,8 @@ impl<'src> Parser<'src> {
                 continue;
             }
 
-            let word = line.first_word().unwrap_or("");
+            let raw_word = line.first_word().unwrap_or("");
+            let word = raw_word.strip_suffix(':').unwrap_or(raw_word);
             let indent = line.indent;
 
             // rule/checkpoint break at any indent.
@@ -353,35 +359,27 @@ impl<'src> Parser<'src> {
     }
 
     // ----------------------------------------------------------
-    // Stubs — implemented in later milestones
+    // Stubs — will be implemented in global.rs and handler.rs
     // ----------------------------------------------------------
 
-    pub(crate) fn parse_module(&mut self) -> Statement {
-        todo!("parse_module: implement in Milestone 3")
-    }
-
-    pub(crate) fn parse_use_rule(&mut self) -> Statement {
-        todo!("parse_use_rule: implement in Milestone 4")
-    }
-
     pub(crate) fn parse_handler(&mut self) -> Statement {
-        todo!("parse_handler: implement in Milestone 5")
+        todo!("parse_handler")
     }
 
     pub(crate) fn parse_ruleorder(&mut self) -> Statement {
-        todo!("parse_ruleorder: implement in Milestone 6")
+        todo!("parse_ruleorder")
     }
 
     pub(crate) fn parse_localrules(&mut self) -> Statement {
-        todo!("parse_localrules: implement in Milestone 6")
+        todo!("parse_localrules")
     }
 
     pub(crate) fn parse_storage(&mut self) -> Statement {
-        todo!("parse_storage: implement in Milestone 6")
+        todo!("parse_storage")
     }
 
     pub(crate) fn parse_global_directive(&mut self) -> Statement {
-        todo!("parse_global_directive: implement in Milestone 6")
+        todo!("parse_global_directive")
     }
 }
 

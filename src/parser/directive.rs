@@ -97,7 +97,7 @@ impl<'src> Parser<'src> {
     /// Starts with `first_part` (the text after the colon on the directive
     /// line), advances past the current line, and keeps reading continuation
     /// lines while delimiter depth > 0.
-    fn collect_inline_value(&mut self, first_part: &str) -> String {
+    pub(crate) fn collect_inline_value(&mut self, first_part: &str) -> String {
         let mut text = first_part.to_string();
         let depth = count_open_delimiters(&text);
 
@@ -121,7 +121,7 @@ impl<'src> Parser<'src> {
     }
 
     /// Parse a block-form directive value (value on indented lines below the keyword).
-    fn parse_block_directive_value(
+    pub(crate) fn parse_block_directive_value(
         &mut self,
         parent_indent: usize,
         directive_start: usize,
@@ -415,7 +415,7 @@ fn count_open_delimiters(text: &str) -> i32 {
 }
 
 /// Strip `indent` leading spaces from each line in a block of text.
-fn dedent_block(text: &str, indent: usize) -> String {
+pub(crate) fn dedent_block(text: &str, indent: usize) -> String {
     text.lines()
         .map(|line| {
             if line.trim().is_empty() {

@@ -132,7 +132,7 @@ impl<'src> Parser<'src> {
     }
 
     /// Peek ahead to find the indentation level of the first non-blank body line.
-    fn peek_body_indent(&self, parent_indent: usize) -> usize {
+    pub(crate) fn peek_body_indent(&self, parent_indent: usize) -> usize {
         for i in self.cursor..self.lines.len() {
             let line = &self.lines[i];
             if !line.is_blank_or_comment() {
