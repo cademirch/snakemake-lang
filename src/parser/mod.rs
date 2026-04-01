@@ -48,8 +48,12 @@ pub mod global;
 pub mod handler;
 pub mod snakemake;
 
-use crate::ast::Snakefile;
-use crate::errors::ParseError;
+use ruff_python_ast::Mod;
+use ruff_python_parser::{Mode, parse_unchecked};
+use ruff_text_size::{TextRange, TextSize};
+
+use crate::ast::{GlobalKeyword, Snakefile, Statement};
+use crate::errors::{ParseError, ParseErrorKind};
 
 // ============================================================
 // Line scanner
@@ -121,7 +125,290 @@ pub(crate) fn scan_lines(source: &str) -> Vec<Line<'_>> {
 }
 
 // ============================================================
-// Public entry point (stub — will be replaced in Task 3)
+// Parser struct
+// ============================================================
+
+/// Top-level parser for a Snakemake file.
+pub(crate) struct Parser<'src> {
+    pub(crate) source: &'src str,
+    pub(crate) path: &'src str,
+    pub(crate) lines: Vec<Line<'src>>,
+    pub(crate) cursor: usize,
+    pub(crate) errors: Vec<ParseError>,
+}
+
+impl<'src> Parser<'src> {
+    /// Creates a new parser for the given source text and file path.
+    pub(crate) fn new(source: &'src str, path: &'src str) -> Self {
+        let lines = scan_lines(source);
+        Self {
+            source,
+            path,
+            lines,
+            cursor: 0,
+            errors: Vec::new(),
+        }
+    }
+
+    /// Returns the current line without advancing the cursor.
+    pub(crate) fn current(&self) -> Option<&Line<'src>> {
+        self.lines.get(self.cursor)
+    }
+
+    /// Advances the cursor past the current line and returns it.
+    pub(crate) fn advance(&mut self) -> Option<&Line<'src>> {
+        let line = self.lines.get(self.cursor);
+        self.cursor += 1;
+        line
+    }
+
+    /// Returns true when all lines have been consumed.
+    pub(crate) fn at_end(&self) -> bool {
+        self.cursor >= self.lines.len()
+    }
+
+    // ----------------------------------------------------------
+    // Top-level dispatch
+    // ----------------------------------------------------------
+
+    /// Parses the whole file and returns the top-level `Snakefile` AST node.
+    pub(crate) fn parse_file(&mut self) -> Snakefile {
+        let mut body = Vec::new();
+
+        while !self.at_end() {
+            let line = match self.current() {
+                Some(l) => l,
+                None => break,
+            };
+
+            if line.is_blank_or_comment() {
+                self.advance();
+                continue;
+            }
+
+            let word = match line.first_word() {
+                Some(w) => w,
+                None => {
+                    self.advance();
+                    continue;
+                }
+            };
+            let indent = line.indent;
+
+            // rule/checkpoint match at any indentation level.
+            if word == "rule" || word == "checkpoint" {
+                let is_checkpoint = word == "checkpoint";
+                body.push(self.parse_rule(is_checkpoint));
+                continue;
+            }
+
+            // All other Snakemake keywords are only recognized at column 0.
+            if indent == 0 {
+                match word {
+                    "module" => {
+                        body.push(self.parse_module());
+                        continue;
+                    }
+                    "use" => {
+                        body.push(self.parse_use_rule());
+                        continue;
+                    }
+                    "onsuccess" | "onerror" | "onstart" => {
+                        body.push(self.parse_handler());
+                        continue;
+                    }
+                    "ruleorder" => {
+                        body.push(self.parse_ruleorder());
+                        continue;
+                    }
+                    "localrules" => {
+                        body.push(self.parse_localrules());
+                        continue;
+                    }
+                    "storage" => {
+                        body.push(self.parse_storage());
+                        continue;
+                    }
+                    kw if GlobalKeyword::from_str(kw).is_some() => {
+                        body.push(self.parse_global_directive());
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Everything else is Python.
+            body.extend(self.collect_python());
+        }
+
+        let range = if self.source.is_empty() {
+            TextRange::default()
+        } else {
+            TextRange::new(TextSize::new(0), TextSize::new(self.source.len() as u32))
+        };
+
+        Snakefile { body, range }
+    }
+
+    /// Collects contiguous non-Snakemake lines and parses them as Python.
+    ///
+    /// Breaks when it encounters `rule`/`checkpoint` at any indent level, or
+    /// another Snakemake keyword at indent == 0.
+    pub(crate) fn collect_python(&mut self) -> Vec<Statement> {
+        let start_cursor = self.cursor;
+        let mut end_byte = 0usize;
+        let mut start_byte: Option<usize> = None;
+
+        while !self.at_end() {
+            let line = match self.current() {
+                Some(l) => l,
+                None => break,
+            };
+
+            if line.is_blank_or_comment() {
+                // Blank/comment lines belong to the surrounding Python block.
+                end_byte = line.start + line.text.len() + 1; // include the '\n'
+                if start_byte.is_none() {
+                    start_byte = Some(line.start);
+                }
+                self.advance();
+                continue;
+            }
+
+            let word = line.first_word().unwrap_or("");
+            let indent = line.indent;
+
+            // rule/checkpoint break at any indent.
+            if word == "rule" || word == "checkpoint" {
+                break;
+            }
+
+            // Other Snakemake keywords break only at column 0.
+            if indent == 0 && is_top_level_keyword(word) {
+                break;
+            }
+
+            if start_byte.is_none() {
+                start_byte = Some(line.start);
+            }
+            end_byte = line.start + line.text.len() + 1;
+            self.advance();
+        }
+
+        let start_byte = match start_byte {
+            Some(b) => b,
+            None => return Vec::new(),
+        };
+
+        // Clamp end_byte to source length in case the last line has no trailing '\n'.
+        let end_byte = end_byte.min(self.source.len());
+        let python_text = &self.source[start_byte..end_byte];
+
+        if python_text.trim().is_empty() {
+            return Vec::new();
+        }
+
+        let parsed = parse_unchecked(python_text, Mode::Module.into());
+        let offset = TextSize::new(start_byte as u32);
+
+        // Collect any ruff syntax errors, offsetting their ranges.
+        for err in parsed.errors() {
+            self.errors.push(ParseError {
+                message: err.to_string(),
+                range: offset_range(err.location, offset),
+                kind: ParseErrorKind::PythonSyntaxError,
+                line: self.lines.get(start_cursor).map_or(1, |l| l.number),
+                column: 0,
+                source_line: None,
+            });
+        }
+
+        let module = match parsed.into_syntax() {
+            Mod::Module(m) => m,
+            Mod::Expression(_) => return Vec::new(),
+        };
+
+        module
+            .body
+            .into_iter()
+            .map(|stmt| Statement::Python(offset_stmt(stmt, offset)))
+            .collect()
+    }
+
+    // ----------------------------------------------------------
+    // Stubs — implemented in later milestones
+    // ----------------------------------------------------------
+
+    pub(crate) fn parse_rule(&mut self, _is_checkpoint: bool) -> Statement {
+        todo!("parse_rule: implement in Milestone 2")
+    }
+
+    pub(crate) fn parse_module(&mut self) -> Statement {
+        todo!("parse_module: implement in Milestone 3")
+    }
+
+    pub(crate) fn parse_use_rule(&mut self) -> Statement {
+        todo!("parse_use_rule: implement in Milestone 4")
+    }
+
+    pub(crate) fn parse_handler(&mut self) -> Statement {
+        todo!("parse_handler: implement in Milestone 5")
+    }
+
+    pub(crate) fn parse_ruleorder(&mut self) -> Statement {
+        todo!("parse_ruleorder: implement in Milestone 6")
+    }
+
+    pub(crate) fn parse_localrules(&mut self) -> Statement {
+        todo!("parse_localrules: implement in Milestone 6")
+    }
+
+    pub(crate) fn parse_storage(&mut self) -> Statement {
+        todo!("parse_storage: implement in Milestone 6")
+    }
+
+    pub(crate) fn parse_global_directive(&mut self) -> Statement {
+        todo!("parse_global_directive: implement in Milestone 6")
+    }
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+
+/// Returns true if `word` is a Snakemake keyword that is only recognized at
+/// column 0 (i.e., not `rule`/`checkpoint`, which are handled separately).
+fn is_top_level_keyword(word: &str) -> bool {
+    matches!(
+        word,
+        "module"
+            | "use"
+            | "onsuccess"
+            | "onerror"
+            | "onstart"
+            | "ruleorder"
+            | "localrules"
+            | "storage"
+    ) || GlobalKeyword::from_str(word).is_some()
+}
+
+/// Offsets a `TextRange` by `offset` bytes.
+pub(crate) fn offset_range(range: TextRange, offset: TextSize) -> TextRange {
+    TextRange::new(range.start() + offset, range.end() + offset)
+}
+
+/// Returns `stmt` as-is; range offsetting is deferred to compiler infrastructure.
+///
+/// ruff returns `TextRange` values relative to the sub-string we hand it.
+/// Full recursive offsetting will be wired up once the source map is in place.
+fn offset_stmt(stmt: ruff_python_ast::Stmt, offset: TextSize) -> ruff_python_ast::Stmt {
+    // TODO: apply offset recursively once source map infrastructure is ready.
+    let _ = offset;
+    stmt
+}
+
+// ============================================================
+// Public entry point
 // ============================================================
 
 /// Parse Snakemake source into an AST.
@@ -130,37 +417,13 @@ pub(crate) fn scan_lines(source: &str) -> Vec<Line<'_>> {
 /// identifies Snakemake constructs at line starts, and delegates
 /// Python content to ruff's parser.
 pub fn parse(source: &str, path: &str) -> Result<Snakefile, Vec<ParseError>> {
-    // TODO: implement in Task 3
-    //
-    // High-level algorithm:
-    //
-    // 1. Scan source line by line, tracking indentation
-    // 2. At each line start, check if the first token is a Snakemake keyword:
-    //    - "rule" / "checkpoint" → parse_rule()
-    //    - "module" → parse_module()
-    //    - "use" → parse_use_rule()
-    //    - "onsuccess" / "onerror" / "onstart" → parse_handler()
-    //    - global directive keyword → parse_global_directive()
-    //    - "ruleorder" → parse_ruleorder()
-    //    - "localrules" → parse_localrules()
-    //    - "storage" → parse_storage()
-    // 3. Otherwise, collect contiguous Python lines and parse with:
-    //    ruff_python_parser::parse_unchecked(python_text, Mode::Module)
-    // 4. For directive values inside rules/modules:
-    //    Extract the value text, parse with ruff as expression(s)
-    // 5. For run: blocks:
-    //    Extract the indented block text, parse with ruff as Module
-    //
-    // The key challenge: determining where Snakemake blocks end.
-    // We track indentation levels. A rule body starts at the indent
-    // after `rule name:`. A directive value starts at the indent after
-    // `input:`. Blocks end when indentation returns to or below the
-    // block's base level.
-    //
-    // All TextRanges on returned AST nodes are byte offsets in the
-    // original source string.
-
-    todo!("Task 3: implement top-level parser dispatch")
+    let mut parser = Parser::new(source, path);
+    let snakefile = parser.parse_file();
+    if parser.errors.is_empty() {
+        Ok(snakefile)
+    } else {
+        Err(parser.errors)
+    }
 }
 
 // ============================================================

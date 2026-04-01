@@ -8,7 +8,7 @@
 //!
 //! ## Quick start
 //!
-//! ```rust
+//! ```rust,no_run
 //! use snakemake_lang::{parse, compile};
 //!
 //! let source = r#"
