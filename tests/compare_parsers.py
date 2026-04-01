@@ -3,34 +3,31 @@ Compare snakemake-lang compilation output against legacy parser.py.
 
 Usage: python tests/compare_parsers.py tests/fixtures/*.smk
 
-Requires: snakemake and snakemake-lang installed in the same environment.
+Uses `snakemake --print-compilation` for the legacy output and
+`snakemake_lang.parse_and_compile()` for the new output.
 """
-import io
+import subprocess
 import sys
 import difflib
 from pathlib import Path
-from unittest.mock import MagicMock
 
 
-def compile_legacy(source: str, path: str) -> str:
-    """Compile using snakemake's built-in parser with a mock workflow."""
-    from snakemake.parser import parse as snakemake_parse
-
-    class FakeSourceFile:
-        def get_path_or_uri(self, secret_free=False):
-            return path
-
-    workflow = MagicMock()
-    workflow.sourcecache.open.return_value = io.StringIO(source)
-
-    linemap: dict[int, int] = {}
-    code, _ = snakemake_parse(FakeSourceFile(), workflow, linemap)
-    return code
+def compile_legacy(path: Path) -> str:
+    """Compile using snakemake --print-compilation."""
+    result = subprocess.run(
+        ["snakemake", "--snakefile", str(path), "--print-compilation"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip())
+    return result.stdout
 
 
 def compile_new(source: str, path: str) -> str:
     """Compile using snakemake-lang."""
     from snakemake_lang import parse_and_compile
+
     code, _ = parse_and_compile(source, path)
     return code
 
@@ -59,10 +56,10 @@ def main():
             continue
 
         try:
-            legacy_output = compile_legacy(source, str(path))
+            legacy_output = compile_legacy(path)
         except Exception as e:
-            # Legacy parser may not handle our breaking changes
             print(f"OLD_ERR:  {path}: {e}")
+            # Not a failure of our parser
             successes += 1
             continue
 
@@ -70,12 +67,15 @@ def main():
         new_lines = normalize(new_output)
 
         if legacy_lines != new_lines:
-            diff = list(difflib.unified_diff(
-                legacy_lines, new_lines,
-                fromfile=f"{path} (parser.py)",
-                tofile=f"{path} (snakemake-lang)",
-                lineterm=""
-            ))
+            diff = list(
+                difflib.unified_diff(
+                    legacy_lines,
+                    new_lines,
+                    fromfile=f"{path} (parser.py)",
+                    tofile=f"{path} (snakemake-lang)",
+                    lineterm="",
+                )
+            )
             if diff:
                 failures.append((path, "\n".join(diff)))
                 print(f"DIFF: {path}")
