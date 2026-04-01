@@ -357,30 +357,6 @@ impl<'src> Parser<'src> {
             .map(|stmt| Statement::Python(offset_stmt(stmt, offset)))
             .collect()
     }
-
-    // ----------------------------------------------------------
-    // Stubs — will be implemented in global.rs and handler.rs
-    // ----------------------------------------------------------
-
-    pub(crate) fn parse_handler(&mut self) -> Statement {
-        todo!("parse_handler")
-    }
-
-    pub(crate) fn parse_ruleorder(&mut self) -> Statement {
-        todo!("parse_ruleorder")
-    }
-
-    pub(crate) fn parse_localrules(&mut self) -> Statement {
-        todo!("parse_localrules")
-    }
-
-    pub(crate) fn parse_storage(&mut self) -> Statement {
-        todo!("parse_storage")
-    }
-
-    pub(crate) fn parse_global_directive(&mut self) -> Statement {
-        todo!("parse_global_directive")
-    }
 }
 
 // ============================================================
