@@ -40,7 +40,7 @@ pyo3 = { version = "0.23", optional = true }
 
 [features]
 default = []
-cli = ["clap", "serde", "serde_json"]
+cli = ["clap", "serde"]
 serde = ["dep:serde", "dep:serde_json"]
 python = ["pyo3"]
 extension-module = ["python", "pyo3/extension-module"]
