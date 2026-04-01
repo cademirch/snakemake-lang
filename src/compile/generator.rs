@@ -8,14 +8,16 @@ use ruff_text_size::Ranged;
 
 use super::source_map::{SourceMap, SourceMapping};
 use crate::ast::{
-    DirectiveKeyword, DirectiveValue, GlobalKeyword, ModuleKeyword, RuleNames,
-    Snakefile, SnakemakeDirective, SnakemakeGlobalDirective, SnakemakeHandler, SnakemakeLocalrules,
+    DirectiveKeyword, DirectiveValue, GlobalKeyword, ModuleKeyword, RuleNames, Snakefile,
+    SnakemakeDirective, SnakemakeGlobalDirective, SnakemakeHandler, SnakemakeLocalrules,
     SnakemakeModule, SnakemakeRule, SnakemakeRuleorder, SnakemakeStorage, SnakemakeUseRule,
     Statement,
 };
 
 /// The standard function signature for rule functions in Snakemake's runtime.
-const RULE_PARAMS: &str = "input, output, params, wildcards, threads, resources, log, version, rule, conda_env, container_img, singularity_args, use_singularity, env_modules, bench_record, jobid, is_shell, bench_iteration, cleanup_scripts, shadow_dir, edit_notebook, conda_base_path, basedir, sourcecache_path, runtime_sourcecache_path";
+const RULE_PARAMS: &str = "input, output, params, wildcards, threads, resources, log, rule, conda_env, container_img, singularity_args, use_singularity, env_modules, bench_record, jobid, is_shell, bench_iteration, cleanup_scripts, shadow_dir, edit_notebook, conda_base_path, basedir, sourcecache_path, runtime_sourcecache_path, runtime_paths";
+
+const INDENT: &str = "\t";
 
 /// Generates virtual Python from a Snakemake AST.
 pub struct VirtualPythonGenerator<'a> {
@@ -30,6 +32,9 @@ pub struct VirtualPythonGenerator<'a> {
 
     /// Source map being built.
     source_map: SourceMap,
+
+    /// Indentation prefix for rules inside control flow blocks.
+    indent_prefix: String,
 }
 
 impl<'a> VirtualPythonGenerator<'a> {
@@ -39,6 +44,7 @@ impl<'a> VirtualPythonGenerator<'a> {
             path,
             output: String::new(),
             source_map: SourceMap::new(),
+            indent_prefix: String::new(),
         }
     }
 
@@ -55,8 +61,19 @@ impl<'a> VirtualPythonGenerator<'a> {
     }
 
     /// Emit synthetic text with no original source mapping.
+    /// When `indent_prefix` is set, auto-prepends it after newlines.
     pub fn emit(&mut self, text: &str) {
-        self.output.push_str(text);
+        if self.indent_prefix.is_empty() {
+            self.output.push_str(text);
+        } else {
+            // Insert indent_prefix after each newline (except trailing)
+            for (i, ch) in text.chars().enumerate() {
+                self.output.push(ch);
+                if ch == '\n' && i + 1 < text.len() {
+                    self.output.push_str(&self.indent_prefix);
+                }
+            }
+        }
     }
 
     /// Consume the generator and return the output + source map.
@@ -67,6 +84,14 @@ impl<'a> VirtualPythonGenerator<'a> {
     /// 1-based line number for a byte offset in the original source.
     fn line_at(&self, offset: usize) -> usize {
         self.source[..offset].matches('\n').count() + 1
+    }
+
+    /// Determine the source indentation at a given byte offset.
+    fn source_indent_at(&self, offset: usize) -> String {
+        let line_start = self.source[..offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let prefix = &self.source[line_start..offset];
+        let indent_len = prefix.len() - prefix.trim_start().len();
+        self.source[line_start..line_start + indent_len].to_string()
     }
 
     /// Extract original source text for a directive's argument range.
@@ -109,14 +134,14 @@ impl<'a> VirtualPythonGenerator<'a> {
             DirectiveKeyword::EnvModules => "envmodules",
             DirectiveKeyword::Shadow => "shadow",
             DirectiveKeyword::Message => "message",
-            DirectiveKeyword::WildcardConstraints => "wildcard_constraints",
+            DirectiveKeyword::WildcardConstraints => "register_wildcard_constraints",
             DirectiveKeyword::Group => "group",
             DirectiveKeyword::Name => "name",
-            DirectiveKeyword::Cache => "cache",
-            DirectiveKeyword::DefaultTarget => "default_target",
+            DirectiveKeyword::Cache => "cache_rule",
+            DirectiveKeyword::DefaultTarget => "default_target_rule",
             DirectiveKeyword::Handover => "handover",
             DirectiveKeyword::Localrule => "localrule",
-            DirectiveKeyword::Pathvars => "pathvars",
+            DirectiveKeyword::Pathvars => "rule_pathvars",
             DirectiveKeyword::Run => "run",
         }
     }
@@ -127,19 +152,19 @@ impl<'a> VirtualPythonGenerator<'a> {
             GlobalKeyword::Configfile => "configfile",
             GlobalKeyword::Include => "include",
             GlobalKeyword::Workdir => "workdir",
-            GlobalKeyword::Envvars => "envvars",
-            GlobalKeyword::Pathvars => "pathvars",
-            GlobalKeyword::Pepfile => "pepfile",
-            GlobalKeyword::Pepschema => "pepschema",
+            GlobalKeyword::Envvars => "register_envvars",
+            GlobalKeyword::Pathvars => "register_pathvars",
+            GlobalKeyword::Pepfile => "set_pepfile",
+            GlobalKeyword::Pepschema => "set_pepschema",
             GlobalKeyword::Report => "report",
             GlobalKeyword::Scattergather => "scattergather",
-            GlobalKeyword::WildcardConstraints => "wildcard_constraints",
-            GlobalKeyword::Container => "container",
+            GlobalKeyword::WildcardConstraints => "register_wildcard_constraints",
+            GlobalKeyword::Container => "set_container_image",
             GlobalKeyword::Containerized => "containerized",
-            GlobalKeyword::Conda => "conda",
-            GlobalKeyword::ResourceScopes => "resource_scopes",
-            GlobalKeyword::InputFlags => "inputflags",
-            GlobalKeyword::OutputFlags => "outputflags",
+            GlobalKeyword::Conda => "set_conda_prefix",
+            GlobalKeyword::ResourceScopes => "register_resource_scopes",
+            GlobalKeyword::InputFlags => "set_input_flags",
+            GlobalKeyword::OutputFlags => "set_output_flags",
         }
     }
 
@@ -154,6 +179,30 @@ impl<'a> VirtualPythonGenerator<'a> {
             ModuleKeyword::Prefix => "prefix",
             ModuleKeyword::Name => "name",
             ModuleKeyword::Pathvars => "pathvars",
+        }
+    }
+
+    fn execution_end_func(keyword: DirectiveKeyword) -> &'static str {
+        match keyword {
+            DirectiveKeyword::Shell => "shell",
+            DirectiveKeyword::Script => "script",
+            DirectiveKeyword::Notebook => "notebook",
+            DirectiveKeyword::Wrapper => "wrapper",
+            DirectiveKeyword::TemplateEngine => "render_template",
+            DirectiveKeyword::Cwl => "cwl",
+            _ => unreachable!(),
+        }
+    }
+
+    fn execution_args(keyword: DirectiveKeyword) -> &'static str {
+        match keyword {
+            DirectiveKeyword::Shell => ", bench_record=bench_record, bench_iteration=bench_iteration",
+            DirectiveKeyword::Script => ", basedir, input, output, params, wildcards, threads, resources, log, config, rule, conda_env, conda_base_path, container_img, singularity_args, env_modules, bench_record, jobid, bench_iteration, cleanup_scripts, shadow_dir, sourcecache_path, runtime_sourcecache_path, runtime_paths",
+            DirectiveKeyword::Notebook => ", basedir, input, output, params, wildcards, threads, resources, log, config, rule, conda_env, conda_base_path, container_img, singularity_args, env_modules, bench_record, jobid, bench_iteration, cleanup_scripts, shadow_dir, edit_notebook, sourcecache_path, runtime_sourcecache_path, runtime_paths",
+            DirectiveKeyword::Wrapper => ", input, output, params, wildcards, threads, resources, log, config, rule, conda_env, conda_base_path, container_img, singularity_args, env_modules, bench_record, workflow.workflow_settings.wrapper_prefix, jobid, bench_iteration, cleanup_scripts, shadow_dir, sourcecache_path, runtime_sourcecache_path, runtime_paths",
+            DirectiveKeyword::TemplateEngine => ", input, output, params, wildcards, config, rule",
+            DirectiveKeyword::Cwl => ", basedir, input, output, params, wildcards, threads, resources, log, config, rule, use_singularity, bench_record, jobid, sourcecache_path, runtime_sourcecache_path, runtime_paths",
+            _ => "",
         }
     }
 
@@ -173,7 +222,9 @@ impl<'a> VirtualPythonGenerator<'a> {
                 Statement::Localrules(lr) => self.emit_localrules(lr),
                 Statement::Storage(st) => self.emit_storage(st),
                 Statement::Handler(h) => self.emit_handler(h),
-                Statement::Python(py_stmt, chunk_offset) => self.emit_python_stmt(py_stmt, *chunk_offset),
+                Statement::Python(py_stmt, chunk_offset) => {
+                    self.emit_python_stmt(py_stmt, *chunk_offset)
+                }
             }
         }
     }
@@ -184,81 +235,105 @@ impl<'a> VirtualPythonGenerator<'a> {
 
     fn emit_rule(&mut self, rule: &SnakemakeRule) {
         let name = rule.name.as_str();
-        let lineno = self.line_at(rule.range.start().to_u32() as usize);
-        let kind = if rule.is_checkpoint {
-            "checkpoint"
+        let rule_offset = rule.range.start().to_u32() as usize;
+        let lineno = self.line_at(rule_offset);
+
+        // Set indent prefix based on source position
+        let saved_indent = self.indent_prefix.clone();
+        self.indent_prefix = self.source_indent_at(rule_offset);
+
+        let checkpoint_arg = if rule.is_checkpoint {
+            ", checkpoint=True"
         } else {
-            "rule"
+            ""
         };
 
-        // @workflow.rule(...) or @workflow.checkpoint(...)
+        // @workflow.rule(name=..., lineno=..., snakefile=...[, checkpoint=True])
         self.emit(&format!(
-            "@workflow.{kind}(name='{name}', lineno={lineno}, snakefile='{path}')\n",
+            "@workflow.rule(name='{name}', lineno={lineno}, snakefile='{path}'{checkpoint_arg})\n",
             path = self.path,
         ));
 
-        // Emit directives as decorator calls (all except run)
+        // Find execution directive (if any)
         let mut has_run = false;
-        let mut has_execution = false;
+        let mut exec_directive: Option<&SnakemakeDirective> = None;
 
         for directive in &rule.directives {
             if directive.keyword == DirectiveKeyword::Run {
                 has_run = true;
-                has_execution = true;
-                continue;
+                break;
             }
             if directive.keyword.is_execution() {
-                has_execution = true;
+                exec_directive = Some(directive);
+            }
+        }
+
+        // Emit non-execution directives as decorators
+        for directive in &rule.directives {
+            if directive.keyword.is_execution() {
+                continue;
             }
             self.emit_directive_decorator(directive);
         }
 
         if has_run {
-            // @workflow.run
+            // run: block → emit @workflow.run + def + body
             self.emit("@workflow.run\n");
-        } else if !has_execution {
-            // No execution directive: add @workflow.norun()
-            self.emit("@workflow.norun()\n");
-        } else {
-            // Has a non-run execution directive (shell, script, etc.)
-            // These are already emitted as decorators above.
-            // Still need @workflow.norun() since the function body is pass.
-            self.emit("@workflow.norun()\n");
-        }
-
-        // Function definition
-        self.emit(&format!(
-            "def __rule_{name}({RULE_PARAMS}, __is_snakemake_rule_func=True):\n"
-        ));
-
-        if has_run {
-            // Emit the run block body
+            self.emit(&format!(
+                "def __rule_{name}({RULE_PARAMS}, __is_snakemake_rule_func=True):\n"
+            ));
             for directive in &rule.directives {
                 if directive.keyword == DirectiveKeyword::Run {
                     self.emit_run_block(directive);
                     break;
                 }
             }
+        } else if let Some(exec_dir) = exec_directive {
+            // shell/script/etc → emit the cmd decorator + @workflow.run + def + body
+            let exec_keyword = exec_dir.keyword;
+            self.emit_directive_decorator(exec_dir);
+            self.emit("@workflow.run\n");
+            self.emit(&format!(
+                "def __rule_{name}({RULE_PARAMS}, __is_snakemake_rule_func=True):\n"
+            ));
+
+            let value_text = self.extract_value_text(exec_dir).to_owned();
+            let func = Self::execution_end_func(exec_keyword);
+            let args = Self::execution_args(exec_keyword);
+            self.emit(&format!(
+                "{INDENT}{func}({value_text}{args})\n"
+            ));
         } else {
-            self.emit("    pass\n");
+            // No execution directive → @workflow.norun() + @workflow.run + def + pass
+            self.emit("@workflow.norun()\n");
+            self.emit("@workflow.run\n");
+            self.emit(&format!(
+                "def __rule_{name}({RULE_PARAMS}, __is_snakemake_rule_func=True):\n"
+            ));
+            self.emit(&format!("{INDENT}pass\n"));
         }
 
         self.emit("\n");
+
+        // Restore indent prefix
+        self.indent_prefix = saved_indent;
     }
 
-    /// Emit a single directive as a `@workflow.method(value)` decorator line.
+    /// Emit a single directive as a `@workflow.method(value)` decorator.
     fn emit_directive_decorator(&mut self, directive: &SnakemakeDirective) {
         let method = Self::directive_method(directive.keyword);
         let value_text = self.extract_value_text(directive).to_owned();
 
-        let orig_start = directive.range.start().to_u32() as usize;
-        let orig_len = directive.range.end().to_u32() as usize - orig_start;
-
         self.emit(&format!("@workflow.{method}("));
         if !value_text.is_empty() {
-            self.emit_mapped(&value_text, orig_start, orig_len);
+            self.emit(" ");
+            if let DirectiveValue::Arguments(args) = &directive.value {
+                let start = args.range.start().to_u32() as usize;
+                let len = args.range.end().to_u32() as usize - start;
+                self.emit_mapped(&value_text, start, len);
+            }
         }
-        self.emit(")\n");
+        self.emit("\n)\n");
     }
 
     /// Emit the body of a `run:` block inside a rule function.
@@ -266,29 +341,25 @@ impl<'a> VirtualPythonGenerator<'a> {
         match &directive.value {
             DirectiveValue::Block(stmts) => {
                 if stmts.is_empty() {
-                    self.emit("    pass\n");
+                    self.emit(&format!("{INDENT}pass\n"));
                     return;
                 }
 
-                // Extract original source for the run block body.
-                // The directive range covers from `run:` through the block end.
                 let dir_start = directive.range.start().to_u32() as usize;
                 let dir_end = directive.range.end().to_u32() as usize;
 
-                // Find the start of the block body (after "run:\n")
                 let run_line_end = self.source[dir_start..]
                     .find('\n')
                     .map(|i| dir_start + i + 1)
                     .unwrap_or(dir_end);
 
                 if run_line_end >= dir_end {
-                    self.emit("    pass\n");
+                    self.emit(&format!("{INDENT}pass\n"));
                     return;
                 }
 
                 let block_source = &self.source[run_line_end..dir_end];
 
-                // Find minimum indentation of non-empty lines in the block
                 let min_indent = block_source
                     .lines()
                     .filter(|l| !l.trim().is_empty())
@@ -296,7 +367,6 @@ impl<'a> VirtualPythonGenerator<'a> {
                     .min()
                     .unwrap_or(0);
 
-                // Re-indent to 4 spaces (function body indent)
                 for line in block_source.lines() {
                     if line.trim().is_empty() {
                         self.emit("\n");
@@ -306,18 +376,18 @@ impl<'a> VirtualPythonGenerator<'a> {
                         } else {
                             line.trim_start()
                         };
-                        self.emit("    ");
-                        // Map the stripped content back to original source
-                        let line_start_in_source =
-                            run_line_end + (line.as_ptr() as usize - block_source.as_ptr() as usize);
-                        let orig_content_start = line_start_in_source + (line.len() - stripped.len());
+                        self.emit(INDENT);
+                        let line_start_in_source = run_line_end
+                            + (line.as_ptr() as usize - block_source.as_ptr() as usize);
+                        let orig_content_start =
+                            line_start_in_source + (line.len() - stripped.len());
                         self.emit_mapped(stripped, orig_content_start, stripped.len());
                         self.emit("\n");
                     }
                 }
             }
             DirectiveValue::Arguments(_) => {
-                self.emit("    pass\n");
+                self.emit(&format!("{INDENT}pass\n"));
             }
         }
     }
@@ -346,20 +416,11 @@ impl<'a> VirtualPythonGenerator<'a> {
             }
         }
 
-        let orig_start = module.range.start().to_u32() as usize;
-        let orig_len = module.range.end().to_u32() as usize - orig_start;
-
-        self.emit("workflow.module(");
-        self.emit_mapped(
-            &format!("'{name}'"),
-            orig_start,
-            orig_len,
-        );
+        self.emit("workflow.module(\n");
         if !kwargs.is_empty() {
-            self.emit(", ");
-            self.emit(&kwargs.join(", "));
+            self.emit(&kwargs.join(","));
         }
-        self.emit(")\n");
+        self.emit(&format!(",name='{name}'\n)\n"));
     }
 
     // ================================================================
@@ -368,45 +429,47 @@ impl<'a> VirtualPythonGenerator<'a> {
 
     fn emit_use_rule(&mut self, use_rule: &SnakemakeUseRule) {
         let orig_start = use_rule.range.start().to_u32() as usize;
-        let orig_len = use_rule.range.end().to_u32() as usize - orig_start;
+        let lineno = self.line_at(orig_start);
 
         // Build rules list
         let rules_str = match &use_rule.rules {
             RuleNames::All => "'*'".to_string(),
             RuleNames::Named(names) => {
-                let quoted: Vec<String> = names.iter().map(|n| format!("'{}'", n.as_str())).collect();
+                let quoted: Vec<String> =
+                    names.iter().map(|n| format!("'{}'", n.as_str())).collect();
                 format!("[{}]", quoted.join(", "))
             }
         };
 
         let from_module = use_rule.from_module.as_str();
 
-        // Build exclude list
+        // Build exclude list (always present)
         let exclude_str = if use_rule.exclude.is_empty() {
-            String::new()
+            "[]".to_string()
         } else {
             let quoted: Vec<String> = use_rule
                 .exclude
                 .iter()
                 .map(|n| format!("'{}'", n.as_str()))
                 .collect();
-            format!(", exclude=[{}]", quoted.join(", "))
+            format!("[{}]", quoted.join(", "))
         };
 
-        // Name modifier
+        // Name modifier (always present)
         let name_mod_str = match &use_rule.name_modifier {
-            Some(pattern) => format!(", name_modifier='{pattern}'"),
-            None => String::new(),
+            Some(pattern) => format!("'{pattern}'"),
+            None => "None".to_string(),
         };
 
-        self.emit_mapped(
-            &format!(
-                "@workflow.userule(rules={rules_str}, from_module='{from_module}'{exclude_str}{name_mod_str})"
-            ),
-            orig_start,
-            orig_len,
-        );
-        self.emit("\n");
+        // First rule name for function name
+        let first_rule = match &use_rule.rules {
+            RuleNames::All => "*",
+            RuleNames::Named(names) => names.first().map(|n| n.as_str()).unwrap_or("unknown"),
+        };
+
+        self.emit(&format!(
+            "@workflow.userule(rules={rules_str}, from_module='{from_module}', exclude_rules={exclude_str}, name_modifier={name_mod_str}, lineno={lineno})\n"
+        ));
 
         // Emit with-directives if present
         if let Some(directives) = &use_rule.with_directives {
@@ -418,7 +481,10 @@ impl<'a> VirtualPythonGenerator<'a> {
             }
         }
 
-        self.emit("def _use_rule():\n    pass\n\n");
+        self.emit("@workflow.run\n");
+        self.emit(&format!(
+            "def __userule_{from_module}_{first_rule}():\n{INDENT}pass\n\n"
+        ));
     }
 
     // ================================================================
@@ -458,7 +524,11 @@ impl<'a> VirtualPythonGenerator<'a> {
     // ================================================================
 
     fn emit_ruleorder(&mut self, ro: &SnakemakeRuleorder) {
-        let quoted: Vec<String> = ro.names.iter().map(|n| format!("'{}'", n.as_str())).collect();
+        let quoted: Vec<String> = ro
+            .names
+            .iter()
+            .map(|n| format!("'{}'", n.as_str()))
+            .collect();
         let orig_start = ro.range.start().to_u32() as usize;
         let orig_len = ro.range.end().to_u32() as usize - orig_start;
 
@@ -468,7 +538,11 @@ impl<'a> VirtualPythonGenerator<'a> {
     }
 
     fn emit_localrules(&mut self, lr: &SnakemakeLocalrules) {
-        let quoted: Vec<String> = lr.names.iter().map(|n| format!("'{}'", n.as_str())).collect();
+        let quoted: Vec<String> = lr
+            .names
+            .iter()
+            .map(|n| format!("'{}'", n.as_str()))
+            .collect();
         let orig_start = lr.range.start().to_u32() as usize;
         let orig_len = lr.range.end().to_u32() as usize - orig_start;
 
@@ -497,14 +571,16 @@ impl<'a> VirtualPythonGenerator<'a> {
                 let orig_start = st.range.start().to_u32() as usize;
                 let orig_len = st.range.end().to_u32() as usize - orig_start;
 
-                self.emit(&format!("workflow.storage('{tag}', "));
+                self.emit(&format!("workflow.storage_registry.register_storage(tag='{tag}', "));
                 if !value_text.is_empty() {
                     self.emit_mapped(value_text, orig_start, orig_len);
                 }
                 self.emit(")\n");
             }
             DirectiveValue::Block(_) => {
-                self.emit(&format!("workflow.storage('{tag}')\n"));
+                self.emit(&format!(
+                    "workflow.storage_registry.register_storage(tag='{tag}')\n"
+                ));
             }
         }
     }
@@ -520,23 +596,17 @@ impl<'a> VirtualPythonGenerator<'a> {
         let orig_start = handler.range.start().to_u32() as usize;
         let orig_len = handler.range.end().to_u32() as usize - orig_start;
 
-        self.emit_mapped(
-            &format!("@workflow.{kind_str}"),
-            orig_start,
-            orig_len,
-        );
+        self.emit_mapped(&format!("@workflow.{kind_str}"), orig_start, orig_len);
         self.emit("\n");
 
         self.emit(&format!("def {func_name}(log):\n"));
 
         if handler.body.is_empty() {
-            self.emit("    pass\n");
+            self.emit(&format!("{INDENT}pass\n"));
         } else {
-            // Extract the handler block body from original source
             let handler_start = handler.range.start().to_u32() as usize;
             let handler_end = handler.range.end().to_u32() as usize;
 
-            // Find the start of the block body (after "onsuccess:\n" etc.)
             let header_end = self.source[handler_start..]
                 .find('\n')
                 .map(|i| handler_start + i + 1)
@@ -561,16 +631,17 @@ impl<'a> VirtualPythonGenerator<'a> {
                         } else {
                             line.trim_start()
                         };
-                        self.emit("    ");
+                        self.emit(INDENT);
                         let line_start_in_source =
                             header_end + (line.as_ptr() as usize - block_source.as_ptr() as usize);
-                        let orig_content_start = line_start_in_source + (line.len() - stripped.len());
+                        let orig_content_start =
+                            line_start_in_source + (line.len() - stripped.len());
                         self.emit_mapped(stripped, orig_content_start, stripped.len());
                         self.emit("\n");
                     }
                 }
             } else {
-                self.emit("    pass\n");
+                self.emit(&format!("{INDENT}pass\n"));
             }
         }
         self.emit("\n");
@@ -580,7 +651,11 @@ impl<'a> VirtualPythonGenerator<'a> {
     // Python pass-through
     // ================================================================
 
-    fn emit_python_stmt(&mut self, stmt: &ruff_python_ast::Stmt, chunk_offset: ruff_text_size::TextSize) {
+    fn emit_python_stmt(
+        &mut self,
+        stmt: &ruff_python_ast::Stmt,
+        chunk_offset: ruff_text_size::TextSize,
+    ) {
         let range = stmt.range();
         // ruff ranges are relative to the chunk that was parsed.
         // Add the chunk offset to get the position in the original source.
