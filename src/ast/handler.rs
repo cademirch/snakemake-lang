@@ -6,12 +6,17 @@ use ruff_text_size::TextRange;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
+#[cfg(feature = "serde")]
+use crate::serde_helpers::{serialize_stmt_vec, serialize_text_range};
+
 /// An event handler: `onsuccess:`, `onerror:`, or `onstart:`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SnakemakeHandler {
     pub kind: HandlerKind,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_stmt_vec"))]
     pub body: Vec<Stmt>,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 

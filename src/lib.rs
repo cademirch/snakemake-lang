@@ -31,6 +31,9 @@ pub mod compile;
 pub mod errors;
 pub mod parser;
 
+#[cfg(feature = "serde")]
+mod serde_helpers;
+
 #[cfg(feature = "python")]
 mod python;
 

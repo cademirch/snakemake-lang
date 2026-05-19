@@ -6,6 +6,9 @@ use ruff_text_size::TextRange;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
+#[cfg(feature = "serde")]
+use crate::serde_helpers::{serialize_identifier, serialize_identifier_vec, serialize_text_range};
+
 use super::rule::SnakemakeDirective;
 
 /// A `use rule` statement.
@@ -21,9 +24,11 @@ pub struct SnakemakeUseRule {
     pub rules: RuleNames,
 
     /// The module to import rules from.
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier"))]
     pub from_module: Identifier,
 
     /// Rules to exclude (only valid with `*`).
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier_vec"))]
     pub exclude: Vec<Identifier>,
 
     /// Optional name modifier pattern (e.g., `qc_*`).
@@ -32,6 +37,7 @@ pub struct SnakemakeUseRule {
     /// Optional `with:` block containing directive overrides.
     pub with_directives: Option<Vec<SnakemakeDirective>>,
 
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -42,5 +48,8 @@ pub enum RuleNames {
     /// `use rule *` — all rules from the module.
     All,
     /// `use rule a, b, c` — specific named rules.
-    Named(Vec<Identifier>),
+    Named(
+        #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier_vec"))]
+        Vec<Identifier>,
+    ),
 }

@@ -16,6 +16,9 @@ use ruff_text_size::TextRange;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
+#[cfg(feature = "serde")]
+use crate::serde_helpers::{serialize_stmt, serialize_text_range, serialize_text_size};
+
 pub use global::*;
 pub use handler::*;
 pub use module::*;
@@ -31,6 +34,7 @@ pub use use_rule::*;
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Snakefile {
     pub body: Vec<Statement>,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -71,7 +75,11 @@ pub enum Statement {
     /// Pass-through Python code (imports, assignments, functions, classes, etc.)
     /// The `TextSize` is the byte offset of the chunk this statement was parsed
     /// from, needed because ruff's TextRanges are relative to the chunk start.
-    Python(Stmt, ruff_text_size::TextSize),
+    Python(
+        #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_stmt"))] Stmt,
+        #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_size"))]
+        ruff_text_size::TextSize,
+    ),
 
     /// Verbatim Python text that is emitted as-is without ruff parsing.
     /// Used for suite openers (`if True:`, `for x in y:`) whose body is

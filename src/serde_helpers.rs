@@ -5,7 +5,7 @@
 //! in the `parse` CLI subcommand.
 
 use ruff_python_ast::{Expr, Identifier, Stmt};
-use ruff_text_size::TextRange;
+use ruff_text_size::{TextRange, TextSize};
 use serde::Serializer;
 
 pub fn serialize_text_range<S>(range: &TextRange, s: S) -> Result<S::Ok, S::Error>
@@ -16,7 +16,21 @@ where
     let mut st = s.serialize_struct("TextRange", 2)?;
     st.serialize_field("start", &u32::from(range.start()))?;
     st.serialize_field("end", &u32::from(range.end()))?;
-    st.finish()
+    st.end()
+}
+
+pub fn serialize_text_size<S>(size: &TextSize, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_u32(u32::from(*size))
+}
+
+pub fn serialize_stmt<S>(stmt: &Stmt, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_str(&format!("{stmt:?}"))
 }
 
 pub fn serialize_identifier<S>(id: &Identifier, s: S) -> Result<S::Ok, S::Error>

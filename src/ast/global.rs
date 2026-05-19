@@ -1,14 +1,10 @@
 //! Global directive AST nodes.
-
 use ruff_python_ast::Identifier;
 use ruff_text_size::TextRange;
-
 #[cfg(feature = "serde")]
 use serde::Serialize;
-
 #[cfg(feature = "serde")]
 use crate::serde_helpers::{serialize_identifier, serialize_identifier_vec, serialize_text_range};
-
 use super::rule::DirectiveValue;
 
 /// A global directive like `configfile:`, `include:`, etc.
@@ -71,7 +67,9 @@ impl GlobalKeyword {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SnakemakeRuleorder {
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier_vec"))]
     pub names: Vec<Identifier>,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -79,7 +77,9 @@ pub struct SnakemakeRuleorder {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SnakemakeLocalrules {
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier_vec"))]
     pub names: Vec<Identifier>,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -87,7 +87,9 @@ pub struct SnakemakeLocalrules {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SnakemakeStorage {
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier"))]
     pub tag: Identifier,
     pub value: DirectiveValue,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }

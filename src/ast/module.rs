@@ -6,15 +6,20 @@ use ruff_text_size::TextRange;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
+#[cfg(feature = "serde")]
+use crate::serde_helpers::{serialize_identifier, serialize_text_range};
+
 use super::rule::DirectiveValue;
 
 /// A `module` definition.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SnakemakeModule {
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_identifier"))]
     pub name: Identifier,
     pub directives: Vec<ModuleDirective>,
     pub docstring: Option<String>,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
@@ -23,6 +28,7 @@ pub struct SnakemakeModule {
 pub struct ModuleDirective {
     pub keyword: ModuleKeyword,
     pub value: DirectiveValue,
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_text_range"))]
     pub range: TextRange,
 }
 
