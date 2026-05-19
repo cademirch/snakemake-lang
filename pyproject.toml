@@ -23,7 +23,7 @@ maturin = ">=1.0"
 pip = "*"
 
 [tool.pixi.feature.test.dependencies]
-snakemake-minimal = ">=8.0"
+snakemake = ">=9.0"
 pytest = ">=7"
 
 [tool.pixi.environments]
