@@ -57,7 +57,43 @@ AST as JSON:
 
 ```sh
 cargo run --features cli --bin snakemake-lang -- \
-    parse tests/fixtures/simple_rule.smk | jq .
+    parse tests/fixtures/simple_rule.smk
+```
+
+Output (truncated — `Expr`/`Stmt` are debug-formatted strings):
+
+```json
+{
+  "body": [
+    {
+      "Rule": {
+        "name": "align",
+        "directives": [
+          {
+            "keyword": "Input",
+            "value": {
+              "Arguments": {
+                "positional": [
+                  "StringLiteral(ExprStringLiteral { ... value: \"reads/{sample}.fastq\" ... })"
+                ],
+                "keywords": [],
+                "range": { "start": 23, "end": 45 }
+              }
+            },
+            "range": { "start": 12, "end": 45 }
+          },
+          { "keyword": "Output", "value": { "Arguments": { "positional": ["..."], "keywords": [], "range": { "start": 58, "end": 80 } } }, "range": { "start": 46, "end": 80 } },
+          { "keyword": "Threads", "value": { "Arguments": { "positional": ["NumberLiteral(... Int(8) ...)"], "keywords": [], "range": { "start": 94, "end": 95 } } }, "range": { "start": 81, "end": 95 } },
+          { "keyword": "Shell", "value": { "Arguments": { "positional": ["..."], "keywords": [], "range": { "start": 107, "end": 148 } } }, "range": { "start": 96, "end": 148 } }
+        ],
+        "docstring": null,
+        "is_checkpoint": false,
+        "range": { "start": 0, "end": 148 }
+      }
+    }
+  ],
+  "range": { "start": 0, "end": 149 }
+}
 ```
 
 Source map alongside compiled Python:
